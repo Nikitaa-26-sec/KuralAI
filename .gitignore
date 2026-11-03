@@ -1,0 +1,16 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+node_modules/
+.next/
+
+
+.env
+.env.local
+
+
+.DS_Store
+Thumbs.db
+.vscode/
