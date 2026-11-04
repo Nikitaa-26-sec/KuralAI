@@ -1,69 +1,57 @@
-
-import requests
+import os
 from typing import List
 
-OLLAMA_URL = "http://localhost:11434/api/embed"
-MODEL = "all-minilm"
-EMBEDDING_DIMENSION = 384
+import requests
+
+OLLAMA_EMBED_URL = os.getenv("OLLAMA_EMBED_URL", "http://localhost:11434/api/embed")
+EMBEDDING_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "all-minilm")
+REQUEST_TIMEOUT = int(os.getenv("OLLAMA_TIMEOUT", "180"))
 
 
 def generate_embeddings(texts: List[str]) -> List[List[float]]:
-    """
-    Generate embeddings for document chunks using Ollama.
-    """
-
+    """Generate embeddings using the configured local Ollama embedding model."""
     if not texts:
         return []
 
-    all_embeddings = []
-    batch_size = 8
+    all_embeddings: List[List[float]] = []
+    batch_size = 16
 
-    for i in range(0, len(texts), batch_size):
-        batch = texts[i:i + batch_size]
-
+    for start in range(0, len(texts), batch_size):
+        batch = texts[start:start + batch_size]
         try:
             response = requests.post(
-                OLLAMA_URL,
-                json={
-                    "model": MODEL,
-                    "input": batch,
-                    "truncate": True
-                },
-                timeout=180
+                OLLAMA_EMBED_URL,
+                json={"model": EMBEDDING_MODEL, "input": batch},
+                timeout=REQUEST_TIMEOUT,
             )
-
             response.raise_for_status()
+            payload = response.json()
+            embeddings = payload.get("embeddings")
 
-            data = response.json()
-            embeddings = data.get("embeddings", [])
+            if not isinstance(embeddings, list) or len(embeddings) != len(batch):
+                raise RuntimeError(
+                    "Ollama returned an unexpected embedding response. "
+                    f"Check that model '{EMBEDDING_MODEL}' is installed."
+                )
 
-            if len(embeddings) != len(batch):
-                raise ValueError("Embedding count mismatch.")
-
-            for embedding in embeddings:
-                if len(embedding) != EMBEDDING_DIMENSION:
-                    raise ValueError(
-                        f"Expected {EMBEDDING_DIMENSION} dimensions, "
-                        f"received {len(embedding)}."
-                    )
-
+            for vector in embeddings:
+                if not isinstance(vector, list) or not vector:
+                    raise RuntimeError("Ollama returned an empty or invalid embedding.")
             all_embeddings.extend(embeddings)
 
-        except requests.RequestException as error:
+        except requests.RequestException as exc:
             raise RuntimeError(
-                f"Ollama embedding request failed: {error}"
-            ) from error
+                "Could not reach Ollama's embedding endpoint. Start Ollama and "
+                f"pull the '{EMBEDDING_MODEL}' model. Details: {exc}"
+            ) from exc
 
     return all_embeddings
 
 
 def generate_query_embedding(query: str) -> List[float]:
-    """
-    Generate an embedding for a user's search query.
-    """
-    if not query.strip():
+    if not query or not query.strip():
         raise ValueError("Query cannot be empty.")
-
-    embeddings = generate_embeddings([query])
-
-    return embeddings[0]
+    vectors = generate_embeddings([query.strip()])
+    if not vectors:
+        raise RuntimeError("No query embedding was generated.")
+    return vectors[0]

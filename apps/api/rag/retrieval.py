@@ -2,71 +2,63 @@
 from rag.embeddings import generate_query_embedding
 from rag.vector_store import collection
 
-# Initial threshold based on your observed retrieval results.
-# Lower cosine distance means greater similarity.
-MAX_DISTANCE = 0.55
+# Relaxed threshold for cosine distance.
+MAX_DISTANCE = 0.85
 
 
 def retrieve_relevant_chunks(
     query: str,
     top_k: int = 4,
-    max_distance: float = MAX_DISTANCE
-):
-    """
-    Retrieve relevant legal passages and filter
-    results using cosine distance.
-    """
+    max_distance: float = MAX_DISTANCE,
+) -> list[dict]:
 
     if not query or not query.strip():
         return []
 
-    total_documents = collection.count()
+    if top_k < 1:
+        raise ValueError("top_k must be at least 1.")
 
-    if total_documents == 0:
+    if not 0.0 <= max_distance <= 2.0:
+        raise ValueError("max_distance must be between 0 and 2.")
+
+    total = collection.count()
+
+    if total == 0:
         return []
 
     query_embedding = generate_query_embedding(query.strip())
 
     results = collection.query(
         query_embeddings=[query_embedding],
-        n_results=min(top_k, total_documents),
-        include=[
-            "documents",
-            "metadatas",
-            "distances"
-        ]
+        n_results=min(top_k, total),
+        include=["documents", "metadatas", "distances"],
     )
 
-    retrieved_chunks = []
+    documents = (results.get("documents") or [[]])[0]
+    metadatas = (results.get("metadatas") or [[]])[0]
+    distances = (results.get("distances") or [[]])[0]
 
-    documents = results.get("documents") or [[]]
-    metadatas = results.get("metadatas") or [[]]
-    distances = results.get("distances") or [[]]
-
-    if not documents[0]:
-        return []
+    matches = []
 
     for document, metadata, distance in zip(
-        documents[0],
-        metadatas[0],
-        distances[0]
+        documents, metadatas, distances
     ):
-
-        if not document or not metadata:
+        if not document or distance is None:
             continue
 
         distance = float(distance)
 
-        # Reject passages that are not sufficiently similar.
         if distance > max_distance:
             continue
 
-        retrieved_chunks.append({
+        metadata = metadata or {}
+
+        matches.append({
             "text": document,
             "source": metadata.get("source", "Unknown"),
-            "page": metadata.get("page", 0),
-            "chunk": metadata.get("chunk", 0),
-            "distance": distance
+            "page": int(metadata.get("page", 0)),
+            "chunk": int(metadata.get("chunk", 0)),
+            "distance": distance,
         })
 
-    return retrieved_chunks
+    return matches

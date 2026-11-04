@@ -3,7 +3,7 @@ from rag.retrieval import retrieve_relevant_chunks
 from rag.llm import generate_answer
 
 
-def test_retrieval():
+def run_retrieval_smoke_test():
 
     questions = [
         "What is sexual harassment at the workplace?",
@@ -55,5 +55,5 @@ def test_retrieval():
 
 
 if __name__ == "__main__":
-    test_retrieval()
+    run_retrieval_smoke_test()
 
